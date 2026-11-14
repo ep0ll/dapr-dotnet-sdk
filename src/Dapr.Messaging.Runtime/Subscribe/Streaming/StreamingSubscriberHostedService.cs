@@ -264,14 +264,14 @@ internal sealed class StreamingSubscriberHostedService(
         };
     }
 
-    private static string ValueToHeaderString(Value value) => value.KindCase switch
+    private static string ValueToHeaderString(Google.Protobuf.WellKnownTypes.Value value) => value.KindCase switch
     {
-        Value.KindOneofCase.StringValue => value.StringValue,
-        Value.KindOneofCase.NumberValue => value.NumberValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        Value.KindOneofCase.BoolValue => value.BoolValue ? "true" : "false",
-        Value.KindOneofCase.StructValue or Value.KindOneofCase.ListValue =>
+        Google.Protobuf.WellKnownTypes.Value.KindOneofCase.StringValue => value.StringValue,
+        Google.Protobuf.WellKnownTypes.Value.KindOneofCase.NumberValue => value.NumberValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Google.Protobuf.WellKnownTypes.Value.KindOneofCase.BoolValue => value.BoolValue ? "true" : "false",
+        Google.Protobuf.WellKnownTypes.Value.KindOneofCase.StructValue or Google.Protobuf.WellKnownTypes.Value.KindOneofCase.ListValue =>
             Google.Protobuf.JsonFormatter.Default.Format(value),
-        Value.KindOneofCase.NullValue => string.Empty,
+        Google.Protobuf.WellKnownTypes.Value.KindOneofCase.NullValue => string.Empty,
         _ => string.Empty,
     };
 
