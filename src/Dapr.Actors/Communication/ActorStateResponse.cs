@@ -26,11 +26,13 @@ public class ActorStateResponse<T>
     /// <param name="value">The response value.</param>
     /// <param name="ttlExpireTime">The time to live expiration time.</param>
     /// <param name="httpStatusCode">The HTTP status code provided alongside the state response.</param>
-    public ActorStateResponse(T value, DateTimeOffset? ttlExpireTime, int httpStatusCode = 200)
+    /// <param name="etag">The ETag returned with the stored value.</param>
+    public ActorStateResponse(T value, DateTimeOffset? ttlExpireTime, int httpStatusCode = 200, string etag = null)
     {
         this.Value = value;
         this.TTLExpireTime = ttlExpireTime;
         this.HttpStatusCode = httpStatusCode;
+        this.ETag = etag;
     }
 
     /// <summary>
@@ -53,4 +55,9 @@ public class ActorStateResponse<T>
     /// The HTTP status code provided alongside the state response.
     /// </summary>
     public int HttpStatusCode { get; }
+
+    /// <summary>
+    /// Gets the state store ETag for the returned value, when available.
+    /// </summary>
+    public string ETag { get; }
 }
