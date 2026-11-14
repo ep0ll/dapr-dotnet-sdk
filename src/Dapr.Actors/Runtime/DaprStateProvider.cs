@@ -140,12 +140,12 @@ internal class DaprStateProvider
                         writer.WriteString("ttlInSeconds", ttl.ToString());
                         writer.WriteEndObject();
                     }
-                    if (!string.IsNullOrEmpty(stateChange.ETag))
-                    {
-                        writer.WriteString("etag", stateChange.ETag);
-                    }
-
                     break;
+            }
+
+            if (!string.IsNullOrEmpty(stateChange.ETag))
+            {
+                writer.WriteString("etag", stateChange.ETag);
             }
 
             writer.WriteEndObject();  // end object for request property
