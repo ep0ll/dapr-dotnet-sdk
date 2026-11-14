@@ -223,9 +223,33 @@ internal sealed class StreamingSubscriberHostedService(
             ["pubsubname"] = message.PubSubName,
         };
 
+        if (!string.IsNullOrEmpty(message.EntryId))
+        {
+            headers["entryId"] = message.EntryId;
+        }
+
         if (!string.IsNullOrEmpty(message.Path))
         {
             headers["path"] = message.Path;
+        }
+
+        // CloudEvent extension attributes are exposed as headers as well. Do not
+        // allow an extension to replace a standard envelope attribute.
+        foreach (var (key, value) in message.Extensions)
+        {
+            headers.TryAdd(key, ValueToHeaderString(value));
+        }
+
+        CloudEvent cloudEvent = null;
+        if (Uri.TryCreate(message.Source, UriKind.Absolute, out var source))
+        {
+            cloudEvent = new CloudEvent
+            {
+                Id = message.Id,
+                Source = source,
+                Type = message.Type,
+                SpecVersion = message.SpecVersion,
+            };
         }
 
         return new TopicContext
@@ -233,10 +257,23 @@ internal sealed class StreamingSubscriberHostedService(
             PubsubName = message.PubSubName,
             TopicName = message.Topic,
             MessageId = message.Id,
+            Metadata = message.Metadata,
             Headers = headers,
             RawPayload = message.Data,
+            CloudEvent = cloudEvent,
         };
     }
+
+    private static string ValueToHeaderString(Value value) => value.KindCase switch
+    {
+        Value.KindOneofCase.StringValue => value.StringValue,
+        Value.KindOneofCase.NumberValue => value.NumberValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Value.KindOneofCase.BoolValue => value.BoolValue ? "true" : "false",
+        Value.KindOneofCase.StructValue or Value.KindOneofCase.ListValue =>
+            Google.Protobuf.JsonFormatter.Default.Format(value),
+        Value.KindOneofCase.NullValue => string.Empty,
+        _ => string.Empty,
+    };
 
     private static DaprSubscriptionOptions BuildSubscriptionOptions(TopicSubscriptionDescriptor descriptor) =>
         new(new MessageHandlingPolicy(TimeSpan.FromSeconds(30), TopicResponseAction.Retry))

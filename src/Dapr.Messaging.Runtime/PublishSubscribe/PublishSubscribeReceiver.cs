@@ -486,7 +486,7 @@ internal sealed class PublishSubscribeReceiver : IDaprSubscription
                         cloudEvent.SpecVersion, cloudEvent.DataContentType, _topicName, _pubSubName)
                     {
                         EntryId = entry.EntryId,
-                        Metadata = entry.Metadata,
+                        Metadata = entry.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value),
                         Extensions = cloudEvent.Extensions?.Fields.ToDictionary(f => f.Key, kvp => kvp.Value)
                             ?? new Dictionary<string, Value>(),
                         Data = cloudEvent.Data.ToByteArray(),
@@ -499,7 +499,7 @@ internal sealed class PublishSubscribeReceiver : IDaprSubscription
                         entry.ContentType, _topicName, _pubSubName)
                     {
                         EntryId = entry.EntryId,
-                        Metadata = entry.Metadata,
+                        Metadata = entry.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value),
                         Data = entry.Bytes.ToByteArray(),
                         AcknowledgementId = bulkEvent.DeliveryId
                     };
