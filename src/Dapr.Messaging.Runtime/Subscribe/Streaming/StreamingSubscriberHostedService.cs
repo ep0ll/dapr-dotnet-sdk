@@ -243,19 +243,19 @@ internal sealed class StreamingSubscriberHostedService(
         CloudEvent cloudEvent = null;
         if (Uri.TryCreate(message.Source, UriKind.Absolute, out var source))
         {
-            var timeValue = GetStringExtension(message.Extensions, CloudEventPropertyNames.Time);
+            var timeValue = GetStringExtension(message.Extensions, "time");
             cloudEvent = new CloudEvent
             {
                 Id = message.Id,
                 Source = source,
                 Type = message.Type,
                 SpecVersion = message.SpecVersion,
-                Subject = GetStringExtension(message.Extensions, CloudEventPropertyNames.Subject),
+                Subject = GetStringExtension(message.Extensions, "subject"),
                 Time = DateTimeOffset.TryParse(timeValue, System.Globalization.CultureInfo.InvariantCulture,
                     System.Globalization.DateTimeStyles.RoundtripKind, out var time) ? time : null,
-                TraceId = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceId),
-                TraceParent = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceParent),
-                TraceState = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceState),
+                TraceId = GetStringExtension(message.Extensions, "traceid"),
+                TraceParent = GetStringExtension(message.Extensions, "traceparent"),
+                TraceState = GetStringExtension(message.Extensions, "tracestate"),
             };
         }
 
