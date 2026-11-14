@@ -83,7 +83,8 @@ internal sealed class DaprHttpInteractor : IDaprInteractor
             }
         }
 
-        return new ActorStateResponse<string>(stringResponse, ttlExpireTime, (int)response.StatusCode);
+        var etag = response.Headers.ETag?.Tag;
+        return new ActorStateResponse<string>(stringResponse, ttlExpireTime, (int)response.StatusCode, etag);
     }
 
     public Task SaveStateTransactionallyAsync(string actorType, string actorId, string data, CancellationToken cancellationToken = default)
