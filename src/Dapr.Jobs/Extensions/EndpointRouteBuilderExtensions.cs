@@ -27,7 +27,7 @@ public static class EndpointRouteBuilderExtensions
     /// necessarily knowing the name of the job at build time.
     /// </summary>
     /// <remarks>
-    /// Both the HTTP POST endpoint (<c>/job/{jobName}</c>) and the gRPC <c>AppCallbackAlpha.OnJobEventAlpha1</c>
+    /// Both the HTTP POST endpoint (<c>/job/{jobName}</c> or a nested path below <c>/job/</c>) and the gRPC <c>AppCallbackAlpha.OnJobEventAlpha1</c>
     /// callback service are registered simultaneously. The Dapr sidecar invokes whichever protocol it is configured
     /// for (via its <c>--app-protocol</c> flag); the other handler remains idle.
     /// <para>
@@ -75,7 +75,7 @@ public static class EndpointRouteBuilderExtensions
 
         // Register the HTTP callback endpoint so the sidecar can deliver job triggers
         // over HTTP when using the default --app-protocol http.
-        endpoints.MapPost("/job/{jobName}", async context =>
+        endpoints.MapPost("/job/{**jobName}", async context =>
         {
             //Retrieve the name of the job from the request path
             var jobName = string.Empty;
