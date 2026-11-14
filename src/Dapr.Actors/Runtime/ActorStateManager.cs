@@ -95,10 +95,17 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
                 return true;
             }
 
-            // Check if the property was marked as remove or is expired in the cache
-            if (stateMetadata.ChangeKind == StateChangeKind.Remove || (stateMetadata.TTLExpireTime.HasValue && stateMetadata.TTLExpireTime.Value <= DateTimeOffset.UtcNow))
+            // A remove still targets the previously read row; keep its ETag.
+            if (stateMetadata.ChangeKind == StateChangeKind.Remove)
             {
-                stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Update);
+                stateChangeTracker[stateName] = StateMetadata.Create(
+                    value, StateChangeKind.Update, ttlExpireTime: null, etag: stateMetadata.ETag);
+                return true;
+            }
+
+            if (stateMetadata.TTLExpireTime.HasValue && stateMetadata.TTLExpireTime.Value <= DateTimeOffset.UtcNow)
+            {
+                stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Add);
                 return true;
             }
 
@@ -377,10 +384,17 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             return condRes.Value;
         }
 
-        var changeKind = this.IsStateMarkedForRemove(stateName) ? StateChangeKind.Update : StateChangeKind.Add;
-
         var stateChangeTracker = GetContextualStateTracker();
-        stateChangeTracker[stateName] = StateMetadata.Create(value, changeKind);
+        if (stateChangeTracker.TryGetValue(stateName, out var existingMetadata) &&
+            existingMetadata.ChangeKind == StateChangeKind.Remove)
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(
+                value, StateChangeKind.Update, ttlExpireTime: null, etag: existingMetadata.ETag);
+        }
+        else
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Add);
+        }
         return value;
     }
 
@@ -395,10 +409,17 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             return condRes.Value;
         }
 
-        var changeKind = this.IsStateMarkedForRemove(stateName) ? StateChangeKind.Update : StateChangeKind.Add;
-
         var stateChangeTracker = GetContextualStateTracker();
-        stateChangeTracker[stateName] = StateMetadata.Create(value, changeKind, ttl: ttl);
+        if (stateChangeTracker.TryGetValue(stateName, out var existingMetadata) &&
+            existingMetadata.ChangeKind == StateChangeKind.Remove)
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(
+                value, StateChangeKind.Update, ttl: ttl, etag: existingMetadata.ETag);
+        }
+        else
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Add, ttl: ttl);
+        }
         return value;
     }
 
@@ -426,7 +447,8 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             // Check if the property was marked as remove in the cache
             if (stateMetadata.ChangeKind == StateChangeKind.Remove)
             {
-                stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Update);
+                stateChangeTracker[stateName] = StateMetadata.Create(
+                    addValue, StateChangeKind.Update, ttlExpireTime: null, etag: stateMetadata.ETag);
                 return addValue;
             }
 
@@ -486,7 +508,8 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             // Check if the property was marked as remove in the cache
             if (stateMetadata.ChangeKind == StateChangeKind.Remove)
             {
-                stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Update, ttl: ttl);
+                stateChangeTracker[stateName] = StateMetadata.Create(
+                    addValue, StateChangeKind.Update, ttl: ttl, etag: stateMetadata.ETag);
                 return addValue;
             }
 
