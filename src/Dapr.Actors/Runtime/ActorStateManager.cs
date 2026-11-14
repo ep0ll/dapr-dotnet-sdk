@@ -186,7 +186,7 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         var (response, httpStatusCode) = await this.TryGetStateFromStateProviderAsync<T>(stateName, cancellationToken);
         if (httpStatusCode == 200 && response is not null) // HTTP status code == 200 OK
         {
-            stateChangeTracker.Add(stateName, StateMetadata.Create(response.Value, StateChangeKind.None, ttlExpireTime: response.TTLExpireTime));
+            stateChangeTracker.Add(stateName, StateMetadata.Create(response.Value, StateChangeKind.None, ttlExpireTime: response.TTLExpireTime, etag: response.ETag));
             return new ConditionalValue<T>(true, response.Value);
         }
 
@@ -310,9 +310,10 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             return true;
         }
 
-        if (await this.actor.Host.StateProvider.ContainsStateAsync(this.actorTypeName, this.actor.Id.ToString(), stateName, cancellationToken))
+        var (response, httpStatusCode) = await this.TryGetStateFromStateProviderAsync<object>(stateName, cancellationToken);
+        if (httpStatusCode == 200 && response is not null)
         {
-            stateChangeTracker.Add(stateName, StateMetadata.CreateForRemove());
+            stateChangeTracker.Add(stateName, StateMetadata.CreateForRemove(response.ETag));
             return true;
         }
 
@@ -510,7 +511,7 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
                 if (stateMetadata.ChangeKind is not (StateChangeKind.None or StateChangeKind.NotFound))
                 {
                     stateChangeList.Add(
-                        new ActorStateChange(stateName, stateMetadata.Type, stateMetadata.Value, stateMetadata.ChangeKind, stateMetadata.TTLExpireTime));
+                        new ActorStateChange(stateName, stateMetadata.Type, stateMetadata.Value, stateMetadata.ChangeKind, stateMetadata.TTLExpireTime, stateMetadata.ETag));
 
                     if (stateMetadata.ChangeKind == StateChangeKind.Remove)
                     {
@@ -524,21 +525,17 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
                 await this.actor.Host.StateProvider.SaveStateAsync(this.actorTypeName, this.actor.Id.ToString(), stateChangeList.AsReadOnly(), cancellationToken);
 
                 // A failed or canceled save must leave the entire batch pending for retry.
+                // Successful writes change the row version, so evict the cached entries
+                // and reload them with their new ETags on the next read.
                 foreach (var stateChange in stateChangeList)
                 {
-                    stateChangeTracker[stateChange.StateName].ChangeKind = StateChangeKind.None;
+                    stateChangeTracker.Remove(stateChange.StateName);
                 }
 
                 if (!ReferenceEquals(stateChangeTracker, this.defaultTracker))
                 {
                     this.SyncDefaultTracker(stateChangeList);
                 }
-            }
-
-            // Remove the states from tracker which were marked for removal.
-            foreach (var stateToRemove in statesToRemove)
-            {
-                stateChangeTracker.Remove(stateToRemove);
             }
         }
     }
@@ -558,11 +555,8 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
     }
 
     // Writes made through a reentrancy-scoped tracker are invisible to the default
-    // tracker, which activation, reminders and timers read from. The save above has
-    // already confirmed these values are now persisted, so refresh the default
-    // tracker's clean copies in place with them rather than dropping them - that
-    // keeps it correct without forcing the next read to round-trip the state store
-    // for a value we already know.
+    // tracker. Evict clean copies so their next read obtains the new value and ETag.
+    // Pending default-tracker changes are left untouched.
     private void SyncDefaultTracker(IEnumerable<ActorStateChange> stateChanges)
     {
         foreach (var stateChange in stateChanges)
@@ -570,15 +564,7 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
             if (this.defaultTracker.TryGetValue(stateChange.StateName, out var stateMetadata) &&
                 stateMetadata.ChangeKind is StateChangeKind.None or StateChangeKind.NotFound)
             {
-                if (stateChange.ChangeKind == StateChangeKind.Remove)
-                {
-                    this.defaultTracker.Remove(stateChange.StateName);
-                }
-                else
-                {
-                    this.defaultTracker[stateChange.StateName] =
-                        StateMetadata.CreateFromValueAndType(stateChange.Value, stateChange.Type, StateChangeKind.None, stateChange.TTLExpireTime);
-                }
+                this.defaultTracker.Remove(stateChange.StateName);
             }
         }
     }
@@ -625,11 +611,12 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
     private sealed class StateMetadata
     {
         private StateMetadata(object value, Type type, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime = null,
-            TimeSpan? ttl = null)
+            TimeSpan? ttl = null, string etag = null)
         {
             this.Value = value;
             this.Type = type;
             this.ChangeKind = changeKind;
+            this.ETag = etag;
 
             if (ttlExpireTime.HasValue && ttl.HasValue)
             {
@@ -654,22 +641,22 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
 
         public DateTimeOffset? TTLExpireTime { get; set; }
 
+        public string ETag { get; }
+
         public static StateMetadata Create<T>(T value, StateChangeKind changeKind) => new(value, typeof(T), changeKind);
 
-        public static StateMetadata Create<T>(T value, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime) =>
-            new(value, typeof(T), changeKind, ttlExpireTime: ttlExpireTime);
+        public static StateMetadata Create<T>(T value, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime, string etag = null) =>
+            new(value, typeof(T), changeKind, ttlExpireTime: ttlExpireTime, etag: etag);
 
-        // Non-generic counterpart to Create<T> for callers (like SyncDefaultTracker) that
-        // already have a boxed value and its runtime Type from an ActorStateChange, rather
-        // than a compile-time T.
-        public static StateMetadata CreateFromValueAndType(object value, Type type, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime) =>
-            new(value, type, changeKind, ttlExpireTime: ttlExpireTime);
+        public static StateMetadata CreateFromValueAndType(object value, Type type, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime, string etag = null) =>
+            new(value, type, changeKind, ttlExpireTime: ttlExpireTime, etag: etag);
 
         public static StateMetadata Create<T>(T value, StateChangeKind changeKind, TimeSpan? ttl) =>
             new(value, typeof(T), changeKind, ttl: ttl);
 
         public static StateMetadata CreateNotFound() => new(null, typeof(object), StateChangeKind.NotFound);
 
-        public static StateMetadata CreateForRemove() => new(null, typeof(object), StateChangeKind.Remove);
+        public static StateMetadata CreateForRemove(string etag = null) => new(null, typeof(object), StateChangeKind.Remove, etag: etag);
+
     }
 }
