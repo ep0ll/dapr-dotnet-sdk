@@ -89,11 +89,18 @@ internal sealed class DaprHttpInteractor : IDaprInteractor
         return new ActorStateResponse<string>(stringResponse, ttlExpireTime, (int)response.StatusCode, etag);
     }
 
-    public Task SaveStateTransactionallyAsync(string actorType, string actorId, string data, CancellationToken cancellationToken = default)
+    public async Task SaveStateTransactionallyAsync(string actorType, string actorId, string data, CancellationToken cancellationToken = default)
     {
         var relativeUrl = string.Format(CultureInfo.InvariantCulture, Constants.ActorStateRelativeUrlFormat, actorType, actorId);
 
-        return this.SendAsync(RequestFunc, relativeUrl, cancellationToken);
+        try
+        {
+            await this.SendAsync(RequestFunc, relativeUrl, cancellationToken);
+        }
+        catch (DaprApiException exception) when (exception.ErrorCode == "ERR_ACTOR_STATE_ETAG_MISMATCH")
+        {
+            throw new ActorStateETagMismatchException(exception.Message, exception);
+        }
 
         HttpRequestMessage RequestFunc()
         {
