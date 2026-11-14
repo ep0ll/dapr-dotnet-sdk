@@ -63,7 +63,7 @@ internal class DaprStateProvider
                 typedResult = JsonSerializer.Deserialize<T>(response.Value, jsonSerializerOptions);
             }
 
-            return (new ActorStateResponse<T>(typedResult, response.TTLExpireTime, response.HttpStatusCode), response.HttpStatusCode);
+            return (new ActorStateResponse<T>(typedResult, response.TTLExpireTime, response.HttpStatusCode, response.ETag), response.HttpStatusCode);
         }
 
         return (null, response.HttpStatusCode);
@@ -139,6 +139,10 @@ internal class DaprStateProvider
                         writer.WriteStartObject();
                         writer.WriteString("ttlInSeconds", ttl.ToString());
                         writer.WriteEndObject();
+                    }
+                    if (!string.IsNullOrEmpty(stateChange.ETag))
+                    {
+                        writer.WriteString("etag", stateChange.ETag);
                     }
 
                     break;
