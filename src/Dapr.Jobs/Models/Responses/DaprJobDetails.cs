@@ -62,4 +62,9 @@ public sealed record DaprJobDetails(DaprJobSchedule Schedule)
     /// Defines the characteristics of the policy to apply when a job fails to trigger.
     /// </summary>
     public IFailurePolicyResponse? FailurePolicy { get; init; }
+
+    /// <summary>
+    /// Optional relative callback path under <c>/job/</c>, independent of the scheduler job name.
+    /// </summary>
+    public string? OverrideRoutePath { get; init; }
 }
