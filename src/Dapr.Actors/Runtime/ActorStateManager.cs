@@ -502,7 +502,6 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         if (stateChangeTracker.Count > 0)
         {
             var stateChangeList = new List<ActorStateChange>();
-            var statesToRemove = new List<string>();
 
             foreach (var stateName in stateChangeTracker.Keys)
             {
@@ -513,10 +512,6 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
                     stateChangeList.Add(
                         new ActorStateChange(stateName, stateMetadata.Type, stateMetadata.Value, stateMetadata.ChangeKind, stateMetadata.TTLExpireTime, stateMetadata.ETag));
 
-                    if (stateMetadata.ChangeKind == StateChangeKind.Remove)
-                    {
-                        statesToRemove.Add(stateName);
-                    }
                 }
             }
 
