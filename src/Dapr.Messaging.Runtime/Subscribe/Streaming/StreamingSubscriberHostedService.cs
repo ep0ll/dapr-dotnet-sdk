@@ -243,12 +243,19 @@ internal sealed class StreamingSubscriberHostedService(
         CloudEvent cloudEvent = null;
         if (Uri.TryCreate(message.Source, UriKind.Absolute, out var source))
         {
+            var timeValue = GetStringExtension(message.Extensions, CloudEventPropertyNames.Time);
             cloudEvent = new CloudEvent
             {
                 Id = message.Id,
                 Source = source,
                 Type = message.Type,
                 SpecVersion = message.SpecVersion,
+                Subject = GetStringExtension(message.Extensions, CloudEventPropertyNames.Subject),
+                Time = DateTimeOffset.TryParse(timeValue, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var time) ? time : null,
+                TraceId = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceId),
+                TraceParent = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceParent),
+                TraceState = GetStringExtension(message.Extensions, CloudEventPropertyNames.TraceState),
             };
         }
 
@@ -262,6 +269,16 @@ internal sealed class StreamingSubscriberHostedService(
             RawPayload = message.Data,
             CloudEvent = cloudEvent,
         };
+    }
+
+    private static string GetStringExtension(
+        IReadOnlyDictionary<string, Google.Protobuf.WellKnownTypes.Value> extensions,
+        string name)
+    {
+        return extensions.TryGetValue(name, out var value) &&
+            value.KindCase == Google.Protobuf.WellKnownTypes.Value.KindOneofCase.StringValue
+            ? value.StringValue
+            : null;
     }
 
     private static string ValueToHeaderString(Google.Protobuf.WellKnownTypes.Value value) => value.KindCase switch
