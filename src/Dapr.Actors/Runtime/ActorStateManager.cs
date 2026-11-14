@@ -224,8 +224,20 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         }
         else
         {
-            // Add and Update are both upserts, while Update ensures a later remove stages a delete.
-            stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Update);
+            var (response, httpStatusCode) = await this.TryGetStateFromStateProviderAsync<T>(stateName, cancellationToken);
+            if (httpStatusCode == 200 && response is not null)
+            {
+                stateChangeTracker[stateName] = StateMetadata.Create(
+                    value, StateChangeKind.Update, ttlExpireTime: null, etag: response.ETag);
+            }
+            else if (httpStatusCode == 204)
+            {
+                stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Add);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unable to read actor state before update (HTTP {httpStatusCode}).");
+            }
         }
 
         await Task.CompletedTask;
@@ -258,8 +270,20 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         }
         else
         {
-            // Add and Update are both upserts, while Update ensures a later remove stages a delete.
-            stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Update, ttl: ttl);
+            var (response, httpStatusCode) = await this.TryGetStateFromStateProviderAsync<T>(stateName, cancellationToken);
+            if (httpStatusCode == 200 && response is not null)
+            {
+                stateChangeTracker[stateName] = StateMetadata.Create(
+                    value, StateChangeKind.Update, ttl: ttl, etag: response.ETag);
+            }
+            else if (httpStatusCode == 204)
+            {
+                stateChangeTracker[stateName] = StateMetadata.Create(value, StateChangeKind.Add, ttl: ttl);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unable to read actor state before update (HTTP {httpStatusCode}).");
+            }
         }
 
         await Task.CompletedTask;
@@ -421,13 +445,20 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         if (httpStatusCode == 200 && response is not null)
         {
             var newValue = updateValueFactory.Invoke(stateName, response.Value);
-            stateChangeTracker.Add(stateName, StateMetadata.Create(newValue, StateChangeKind.Update));
+            stateChangeTracker.Add(
+                stateName,
+                StateMetadata.Create(newValue, StateChangeKind.Update, ttlExpireTime: response.TTLExpireTime, etag: response.ETag));
 
             return newValue;
         }
 
-        stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Add);
-        return addValue;
+        if (httpStatusCode == 204)
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Add);
+            return addValue;
+        }
+
+        throw new InvalidOperationException($"Unable to read actor state before update (HTTP {httpStatusCode}).");
     }
 
     public async Task<T> AddOrUpdateStateAsync<T>(
@@ -474,13 +505,20 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         if (httpStatusCode == 200 && response is not null)
         {
             var newValue = updateValueFactory.Invoke(stateName, response.Value);
-            stateChangeTracker.Add(stateName, StateMetadata.Create(newValue, StateChangeKind.Update, ttl: ttl));
+            stateChangeTracker.Add(
+                stateName,
+                StateMetadata.Create(newValue, StateChangeKind.Update, ttl: ttl, etag: response.ETag));
 
             return newValue;
         }
 
-        stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Add, ttl: ttl);
-        return addValue;
+        if (httpStatusCode == 204)
+        {
+            stateChangeTracker[stateName] = StateMetadata.Create(addValue, StateChangeKind.Add, ttl: ttl);
+            return addValue;
+        }
+
+        throw new InvalidOperationException($"Unable to read actor state before update (HTTP {httpStatusCode}).");
     }
 
     public Task ClearCacheAsync(CancellationToken cancellationToken)
@@ -646,8 +684,8 @@ internal sealed class ActorStateManager : IActorStateManager, IActorContextualSt
         public static StateMetadata CreateFromValueAndType(object value, Type type, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime, string etag = null) =>
             new(value, type, changeKind, ttlExpireTime: ttlExpireTime, etag: etag);
 
-        public static StateMetadata Create<T>(T value, StateChangeKind changeKind, TimeSpan? ttl) =>
-            new(value, typeof(T), changeKind, ttl: ttl);
+        public static StateMetadata Create<T>(T value, StateChangeKind changeKind, TimeSpan? ttl, string etag = null) =>
+            new(value, typeof(T), changeKind, ttl: ttl, etag: etag);
 
         public static StateMetadata CreateNotFound() => new(null, typeof(object), StateChangeKind.NotFound);
 
