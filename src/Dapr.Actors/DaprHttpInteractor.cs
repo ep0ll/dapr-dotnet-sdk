@@ -83,7 +83,9 @@ internal sealed class DaprHttpInteractor : IDaprInteractor
             }
         }
 
-        var etag = response.Headers.ETag?.Tag;
+        var etag = response.Headers.TryGetValues("ETag", out var etagValues)
+            ? etagValues.FirstOrDefault()
+            : null;
         return new ActorStateResponse<string>(stringResponse, ttlExpireTime, (int)response.StatusCode, etag);
     }
 
