@@ -11,6 +11,8 @@
 // limitations under the License.
 // ------------------------------------------------------------------------
 
+using Dapr.Messaging;
+
 namespace Dapr.Messaging.PublishSubscribe;
 
 /// <summary>
@@ -39,6 +41,12 @@ public sealed record DaprSubscriptionOptions(MessageHandlingPolicy MessageHandli
     /// The optional name of the dead-letter topic to send unprocessed messages to.
     /// </summary>
     public string? DeadLetterTopic { get; init; }
+
+    /// <summary>
+    /// Optional bulk delivery configuration. When enabled, the sidecar sends each
+    /// streaming batch as a set of independently acknowledged entries.
+    /// </summary>
+    public BulkSubscribeOptions? BulkSubscribe { get; init; }
 
     /// <summary>
     /// If populated, this reflects the maximum number of messages that can be queued for processing on the replica. By default,

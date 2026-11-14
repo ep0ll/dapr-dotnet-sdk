@@ -243,5 +243,6 @@ internal sealed class StreamingSubscriberHostedService(
         {
             Metadata = descriptor.Metadata,
             DeadLetterTopic = descriptor.DeadLetterTopic,
+            BulkSubscribe = descriptor.BulkSubscribe,
         };
 }

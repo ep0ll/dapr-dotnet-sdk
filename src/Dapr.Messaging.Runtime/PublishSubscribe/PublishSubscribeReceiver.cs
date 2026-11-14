@@ -381,14 +381,15 @@ internal sealed class PublishSubscribeReceiver : IDaprSubscription
             cts.CancelAfter(_options.MessageHandlingPolicy.TimeoutDuration);
 
             var messageAction = await _messageHandler(message, cts.Token);
+            var acknowledgementId = message.AcknowledgementId ?? message.Id;
 
             try
             {
-                await AcknowledgeMessageAsync(message.Id, messageAction, cancellationToken);
+                await AcknowledgeMessageAsync(acknowledgementId, messageAction, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                await AcknowledgeMessageAsync(message.Id, _options.MessageHandlingPolicy.DefaultResponseAction,
+                await AcknowledgeMessageAsync(acknowledgementId, _options.MessageHandlingPolicy.DefaultResponseAction,
                     cancellationToken);
             }
         }
@@ -414,8 +415,20 @@ internal sealed class PublishSubscribeReceiver : IDaprSubscription
     {
         var initialRequest = new P.SubscribeTopicEventsRequestInitialAlpha1()
         {
-            PubsubName = _pubSubName, DeadLetterTopic = _options.DeadLetterTopic ?? string.Empty, Topic = _topicName
+            PubsubName = _pubSubName,
+            DeadLetterTopic = _options.DeadLetterTopic ?? string.Empty,
+            Topic = _topicName
         };
+
+        if (_options.BulkSubscribe is { Enabled: true } bulk)
+        {
+            initialRequest.BulkSubscribe = new BulkSubscribeConfig
+            {
+                Enabled = true,
+                MaxMessagesCount = bulk.MaxMessagesCount,
+                MaxAwaitDurationMs = bulk.MaxAwaitDurationMs
+            };
+        }
 
         if (_options.Metadata.Count > 0)
         {
@@ -430,30 +443,90 @@ internal sealed class PublishSubscribeReceiver : IDaprSubscription
 
         await foreach (var response in stream.ResponseStream.ReadAllAsync(cancellationToken))
         {
-            if (response?.EventMessage is null)
+            if (response is null || response.InitialResponse is not null)
             {
                 continue;
             }
 
-            var message =
-                new TopicMessage(response.EventMessage.Id, response.EventMessage.Source, response.EventMessage.Type,
-                    response.EventMessage.SpecVersion, response.EventMessage.DataContentType,
-                    response.EventMessage.Topic, response.EventMessage.PubsubName)
-                {
-                    Path = response.EventMessage.Path,
-                    Extensions = response.EventMessage.Extensions.Fields.ToDictionary(f => f.Key, kvp => kvp.Value),
-                    Data = response.EventMessage.Data.ToByteArray()
-                };
+            if (response.EventMessage is not null && response.EventMessages.Count > 0)
+            {
+                throw new InvalidDataException("A streaming response cannot contain both a single event and bulk events.");
+            }
 
-            try
+            if (response.EventMessage is not null)
             {
-                await channelWriter.WaitToWriteAsync(cancellationToken);
-                await channelWriter.WriteAsync(message, cancellationToken);
+                await WriteTopicMessageAsync(
+                    channelWriter,
+                    new TopicMessage(response.EventMessage.Id, response.EventMessage.Source, response.EventMessage.Type,
+                        response.EventMessage.SpecVersion, response.EventMessage.DataContentType,
+                        response.EventMessage.Topic, response.EventMessage.PubsubName)
+                    {
+                        Path = response.EventMessage.Path,
+                        Extensions = response.EventMessage.Extensions.Fields.ToDictionary(f => f.Key, kvp => kvp.Value),
+                        Data = response.EventMessage.Data.ToByteArray(),
+                        AcknowledgementId = response.EventMessage.Id
+                    },
+                    cancellationToken);
+                continue;
             }
-            catch (Exception)
+
+            foreach (var bulkEvent in response.EventMessages)
             {
-                // Channel writer completed during DisposeAsync — stop writing.
+                if (bulkEvent is null || string.IsNullOrWhiteSpace(bulkEvent.DeliveryId) || bulkEvent.Entry is null)
+                {
+                    throw new InvalidDataException("A streaming bulk response contains an invalid entry or delivery ID.");
+                }
+
+                var entry = bulkEvent.Entry;
+                TopicMessage message;
+                if (entry.EventCase == TopicEventBulkRequestEntry.EventOneofCase.CloudEvent)
+                {
+                    var cloudEvent = entry.CloudEvent;
+                    message = new TopicMessage(cloudEvent.Id, cloudEvent.Source, cloudEvent.Type,
+                        cloudEvent.SpecVersion, cloudEvent.DataContentType, _topicName, _pubSubName)
+                    {
+                        EntryId = entry.EntryId,
+                        Metadata = entry.Metadata,
+                        Extensions = cloudEvent.Extensions?.Fields.ToDictionary(f => f.Key, kvp => kvp.Value)
+                            ?? new Dictionary<string, Value>(),
+                        Data = cloudEvent.Data.ToByteArray(),
+                        AcknowledgementId = bulkEvent.DeliveryId
+                    };
+                }
+                else if (entry.EventCase == TopicEventBulkRequestEntry.EventOneofCase.Bytes)
+                {
+                    message = new TopicMessage(entry.EntryId, string.Empty, string.Empty, string.Empty,
+                        entry.ContentType, _topicName, _pubSubName)
+                    {
+                        EntryId = entry.EntryId,
+                        Metadata = entry.Metadata,
+                        Data = entry.Bytes.ToByteArray(),
+                        AcknowledgementId = bulkEvent.DeliveryId
+                    };
+                }
+                else
+                {
+                    throw new InvalidDataException($"Streaming bulk entry '{entry.EntryId}' has no event payload.");
+                }
+
+                await WriteTopicMessageAsync(channelWriter, message, cancellationToken);
             }
+        }
+    }
+
+    private static async Task WriteTopicMessageAsync(
+        ChannelWriter<TopicMessage> channelWriter,
+        TopicMessage message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await channelWriter.WaitToWriteAsync(cancellationToken);
+            await channelWriter.WriteAsync(message, cancellationToken);
+        }
+        catch (ChannelClosedException)
+        {
+            // Channel writer completed during DisposeAsync — stop writing.
         }
     }
 

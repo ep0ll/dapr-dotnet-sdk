@@ -117,12 +117,16 @@ message SubscribeTopicEventsRequestInitialAlpha1 {
   // dead_letter_topic is the topic to which messages that fail to be processed
   // are sent.
   optional string dead_letter_topic = 4;
+
+  // Optional bulk subscription configuration, shared with AppCallback.
+  dapr.proto.runtime.v1.BulkSubscribeConfig bulk_subscribe = 5;
 }
 
 // SubscribeTopicEventsRequestProcessedAlpha1 is the message containing the
 // subscription to a topic.
 message SubscribeTopicEventsRequestProcessedAlpha1 {
-  // id is the unique identifier for the subscription request.
+  // id identifies the delivery being acknowledged: TopicEventRequest.id for
+  // single events, or SubscribeTopicEventsBulkEntryAlpha1.delivery_id for bulk entries.
   string id = 1;
 
   // status is the result of the subscription request.
@@ -137,6 +141,17 @@ message SubscribeTopicEventsResponseAlpha1 {
     SubscribeTopicEventsResponseInitialAlpha1 initial_response = 1;
     TopicEventRequest event_message = 2;
   }
+
+  // Batch deliveries. Each wrapper carries an ACK-only delivery ID, leaving
+  // the original bulk entry ID and CloudEvent ID intact.
+  repeated SubscribeTopicEventsBulkEntryAlpha1 event_messages = 3;
+}
+
+// SubscribeTopicEventsBulkEntryAlpha1 keeps transport acknowledgement
+// correlation separate from the original bulk entry and CloudEvent identities.
+message SubscribeTopicEventsBulkEntryAlpha1 {
+  string delivery_id = 1;
+  dapr.proto.runtime.v1.TopicEventBulkRequestEntry entry = 2;
 }
 
 // SubscribeTopicEventsResponseInitialAlpha1 is the initial response from daprd

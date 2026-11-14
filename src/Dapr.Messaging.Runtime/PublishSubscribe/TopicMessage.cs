@@ -35,6 +35,22 @@ public sealed record TopicMessage(string Id, string Source, string Type, string 
     public ReadOnlyMemory<byte> Data { get; init; }
 
     /// <summary>
+    /// The original component bulk entry ID, when this message was delivered in a batch.
+    /// This is distinct from both the CloudEvent ID and the streaming ACK ID.
+    /// </summary>
+    public string? EntryId { get; init; }
+
+    /// <summary>
+    /// Per-entry metadata supplied by the pub/sub component.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Internal ID used only to acknowledge this delivery on the streaming connection.
+    /// </summary>
+    internal string? AcknowledgementId { get; init; }
+
+    /// <summary>
     /// The matching path from the topic subscription/routes (if specified) for this event.
     /// </summary>
     public string? Path { get; init; }
