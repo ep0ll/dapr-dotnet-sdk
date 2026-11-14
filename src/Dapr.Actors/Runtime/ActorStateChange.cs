@@ -28,7 +28,8 @@ public sealed class ActorStateChange
     /// <param name="value">The value associated with given actor state name.</param>
     /// <param name="changeKind">The kind of state change for given actor state name.</param>
     /// <param name="ttlExpireTime">The time to live for the state.</param>
-    public ActorStateChange(string stateName, Type type, object value, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime)
+    /// <param name="etag">The ETag read with the state value.</param>
+    public ActorStateChange(string stateName, Type type, object value, StateChangeKind changeKind, DateTimeOffset? ttlExpireTime, string etag = null)
     {
         ArgumentVerifier.ThrowIfNull(stateName, nameof(stateName));
 
@@ -37,6 +38,7 @@ public sealed class ActorStateChange
         this.Value = value;
         this.ChangeKind = changeKind;
         this.TTLExpireTime = ttlExpireTime;
+        this.ETag = etag;
     }
 
     /// <summary>
@@ -81,4 +83,9 @@ public sealed class ActorStateChange
     /// If null, the state will not expire.
     /// </remarks>
     public DateTimeOffset? TTLExpireTime { get; }
+
+    /// <summary>
+    /// Gets the ETag associated with the value originally read from the state store.
+    /// </summary>
+    public string ETag { get; }
 }
